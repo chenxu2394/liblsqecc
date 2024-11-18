@@ -129,6 +129,12 @@ else()
    message("USE_GRIDSYNTH not defined, building without Gridsynth")
 endif()
 
+find_package(Boost COMPONENTS graph)
+if(Boost_FOUND)
+    add_definitions(-DENABLE_BOOST_GRAPH_SEARCH)
+    include_directories(${Boost_INCLUDE_DIRS})
+endif()
+
 ###################################################
 # Command line executable
 if(NOT DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
