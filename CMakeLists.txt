@@ -27,6 +27,7 @@ endif ()
 find_package(Boost COMPONENTS graph)
 if(Boost_FOUND)
     add_definitions(-DENABLE_BOOST_GRAPH_SEARCH)
+    include_directories(${Boost_INCLUDE_DIRS})
 endif()
 
 # set(PYTHON_VERSION 3.9)
