@@ -83,7 +83,12 @@ static std::string construct_mapblock(const std::string& param0)
         {20, "default:coral_pink"},
         {21, "default:ice"},
         {22, "default:permafrost"},
-        {23, "default:mossycobble"}
+        {23, "default:mossycobble"},
+        {24, "latticesurgery:distillation_111111"},
+        {25, "latticesurgery:qubit_111111"},
+        {26, "latticesurgery:routing_1_111111"},
+        {27, "latticesurgery:dead_cell"},
+        {28, "latticesurgery:measurement"}
     };
     
     // Pack number of mappings
@@ -217,11 +222,11 @@ load_pattern_from_string(const std::string& pattern_str, int stripe_height)
         std::string material = line.substr(pos2 + 1);
         material.erase(0, material.find_first_not_of(" \t"));
         std::map<std::string, int> material_map = {
-            {"route", 13},
-            {"qubit", 5},
-            {"measurement", 21},
-            {"ancilla", 15},
-            {"distillation", 20},
+            {"route", 26},
+            {"qubit", 25},
+            {"measurement", 28},
+            {"ancilla", 27},
+            {"distillation", 24},
         };
         int mat_id = 0;
         auto it = material_map.find(material);
