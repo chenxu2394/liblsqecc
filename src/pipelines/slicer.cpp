@@ -218,6 +218,10 @@ namespace lsqecc
                 .names({"--stripeheight"})
                 .description("Set the stripe height for minetest export (default 4)")
                 .required(false);
+        parser.add_argument()
+                .names({"--text"})
+                .description("Output slices as text instead of JSON")
+                .required(false);
         parser.enable_help();
 
         auto err = parser.parse(argc, argv);
@@ -567,6 +571,15 @@ namespace lsqecc
                     ++time_stamp;
                 };
             }
+            else if (parser.exists("text"))
+            {
+                // Print output in text format directly to bulk_output_stream.
+                size_t time_stamp = 0;
+                slice_visitor = [&bulk_output_stream, time_stamp](const DenseSlice & s) mutable {
+                    bulk_output_stream.get() << slice_to_text(s, time_stamp) << "\n";
+                    ++time_stamp;
+                };
+            }
             else
             {
                 bool is_first_slice = true;
@@ -682,7 +695,7 @@ namespace lsqecc
                 
         }
         
-        if(print_slices)
+        if(print_slices && !parser.exists("minetest") && !parser.exists("text"))
             bulk_output_stream.get() << "]" <<std::endl;
         if (lli_print_mode == LLIPrintMode::Sliced)
             bulk_output_stream.get() << std::endl;
