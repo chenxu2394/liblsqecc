@@ -12,54 +12,18 @@
 #include <cmath>
 #include <cstring>
 #include <zstd.h>
+
 namespace lsqecc {
 
-// --- Helper Types and Functions ---
+namespace {
+    // This struct and vector define the global mapping used throughout the code.
+    struct Mapping {
+        int id;
+        std::string name;
+    };
 
-using PatternKey = std::tuple<int, int, int>; // (x, y, z)
-
-// construct_mapblock_param0_for_region builds a 4096-node (16x16x16) param0 binary array
-// for the specified mapBlock using the pattern data. Unspecified nodes remain 0 (air).
-static std::string construct_mapblock_param0_for_region(int mb_x, int mb_y, int mb_z,
-                                                         const std::map<PatternKey, int>& pattern)
-{
-    const int total_nodes = 16 * 16 * 16;
-    std::vector<uint16_t> node_ids(total_nodes, 0); // default air (0)
-    for (const auto& entry : pattern) {
-        int gx, gy, gz;
-        std::tie(gx, gy, gz) = entry.first;
-        int block_x = gx / 16;
-        int block_y = gy / 16;
-        int block_z = gz / 16;
-        if (block_x == mb_x && block_y == mb_y && block_z == mb_z) {
-            int local_x = gx % 16;
-            int local_y = gy % 16;
-            int local_z = gz % 16;
-            int index = local_z * (16 * 16) + local_y * 16 + local_x;
-            node_ids[index] = entry.second;
-        }
-    }
-    std::string result;
-    result.resize(total_nodes * 2, '\0');
-    for (int i = 0; i < total_nodes; i++) {
-        uint16_t val = node_ids[i];
-        result[2 * i] = static_cast<char>((val >> 8) & 0xFF);
-        result[2 * i + 1] = static_cast<char>(val & 0xFF);
-    }
-    return result;
-}
-
-// construct_mapblock builds the full mapBlock blob by combining a header, the param0 data,
-// two 4096-byte arrays for param1 and param2 (filled with zeros), and trailing bytes.
-static std::string construct_mapblock(const std::string& param0)
-{
-    std::string header;
-    header.append("\x00\x00\x00\x00\x00\x00\x00", 7); // flags, lighting, timestamp
-    header.push_back('\x00'); // Name-ID Mapping version (set to 0)
-
-    // Define fixed mappings.
-    struct Mapping { uint16_t id; std::string name; };
-    Mapping mappings[] = {
+    // Centralized mapping definition.
+    const std::vector<Mapping> mappings_list = {
         {0, "air"},
         {1, "latticesurgery:qubit_000011"},
         {2, "latticesurgery:qubit_000111"},
@@ -110,13 +74,68 @@ static std::string construct_mapblock(const std::string& param0)
         {47, "latticesurgery:routing_1_111000"},
         {48, "latticesurgery:routing_1_111100"}
     };
-    
-    // Pack number of mappings
-    uint16_t num_mappings = static_cast<uint16_t>(std::size(mappings));
+
+    // This function constructs a map from material name to its corresponding id.
+    const std::map<std::string, int>& getNameToIdMap() {
+        static std::map<std::string, int> nameToId;
+        if (nameToId.empty()) {
+            for (const auto& m : mappings_list) {
+                nameToId[m.name] = m.id;
+            }
+        }
+        return nameToId;
+    }
+} // anonymous namespace
+
+// --- Helper Types and Functions ---
+
+using PatternKey = std::tuple<int, int, int>; // (x, y, z)
+
+// construct_mapblock_param0_for_region builds a 4096-node (16x16x16) param0 binary array
+// for the specified mapBlock using the pattern data. Unspecified nodes remain 0 (air).
+static std::string construct_mapblock_param0_for_region(int mb_x, int mb_y, int mb_z,
+                                                         const std::map<PatternKey, int>& pattern)
+{
+    const int total_nodes = 16 * 16 * 16;
+    std::vector<uint16_t> node_ids(total_nodes, 0); // default air (0)
+    for (const auto& entry : pattern) {
+        int gx, gy, gz;
+        std::tie(gx, gy, gz) = entry.first;
+        int block_x = gx / 16;
+        int block_y = gy / 16;
+        int block_z = gz / 16;
+        if (block_x == mb_x && block_y == mb_y && block_z == mb_z) {
+            int local_x = gx % 16;
+            int local_y = gy % 16;
+            int local_z = gz % 16;
+            int index = local_z * (16 * 16) + local_y * 16 + local_x;
+            node_ids[index] = entry.second;
+        }
+    }
+    std::string result;
+    result.resize(total_nodes * 2, '\0');
+    for (int i = 0; i < total_nodes; i++) {
+        uint16_t val = node_ids[i];
+        result[2 * i] = static_cast<char>((val >> 8) & 0xFF);
+        result[2 * i + 1] = static_cast<char>(val & 0xFF);
+    }
+    return result;
+}
+
+// construct_mapblock builds the full mapBlock blob by combining a header, the param0 data,
+// two 4096-byte arrays for param1 and param2 (filled with zeros), and trailing bytes.
+static std::string construct_mapblock(const std::string& param0)
+{
+    std::string header;
+    header.append("\x00\x00\x00\x00\x00\x00\x00", 7); // flags, lighting, timestamp
+    header.push_back('\x00'); // Name-ID Mapping version (set to 0)
+
+    // Use the centralized mappings_list to add mapping data.
+    uint16_t num_mappings = static_cast<uint16_t>(mappings_list.size());
     header.push_back(static_cast<char>((num_mappings >> 8) & 0xFF));
     header.push_back(static_cast<char>(num_mappings & 0xFF));
 
-    for (const auto& m : mappings) {
+    for (const auto& m : mappings_list) {
         header.push_back(static_cast<char>((m.id >> 8) & 0xFF));
         header.push_back(static_cast<char>(m.id & 0xFF));
         uint16_t name_len = m.name.size();
@@ -165,7 +184,8 @@ static int64_t compute_mapblock_position(int mb_x, int mb_y, int mb_z)
     return (static_cast<int64_t>(mb_z) << 24) | (static_cast<int64_t>(mb_y) << 12) | mb_x;
 }
 
-// save_to_sqlite inserts or replaces a mapBlock (given by its position and compressed blob, as hex) into the SQLite database.
+// save_to_sqlite inserts or replaces a mapBlock (given by its position and compressed blob, as hex)
+// into the SQLite database.
 static bool save_to_sqlite(int64_t pos, const std::string& blob_hex, const std::string& db_path)
 {
     size_t len = blob_hex.size();
@@ -215,6 +235,7 @@ static bool save_to_sqlite(int64_t pos, const std::string& blob_hex, const std::
     return true;
 }
 
+// load_pattern_from_string now uses the centralized mapping from material name to id.
 static std::pair<std::map<PatternKey, int>, std::tuple<int, int, int>>
 load_pattern_from_string(const std::string& pattern_str, int stripe_height)
 {
@@ -222,6 +243,7 @@ load_pattern_from_string(const std::string& pattern_str, int stripe_height)
     std::map<PatternKey, int> pattern;
     int max_x = 0, max_y = 0, max_z = 0;
     std::string line;
+    const auto& nameToIdMap = getNameToIdMap();
     while (std::getline(iss, line)) {
         if (line.empty()) continue;
         size_t pos1 = line.find('(');
@@ -241,59 +263,9 @@ load_pattern_from_string(const std::string& pattern_str, int stripe_height)
         int y = values[2] * stripe_height; // scale y
         std::string material = line.substr(pos2 + 1);
         material.erase(0, material.find_first_not_of(" \t"));
-        std::map<std::string, int> material_map = {
-            {"latticesurgery:qubit_000011", 1},
-            {"latticesurgery:qubit_000111", 2},
-            {"latticesurgery:qubit_001011", 3},
-            {"latticesurgery:qubit_001111", 4},
-            {"latticesurgery:qubit_010011", 5},
-            {"latticesurgery:qubit_010111", 6},
-            {"latticesurgery:qubit_011011", 7},
-            {"latticesurgery:qubit_011111", 8},
-            {"latticesurgery:qubit_100011", 9},
-            {"latticesurgery:qubit_100111", 10},
-            {"latticesurgery:qubit_101011", 11},
-            {"latticesurgery:qubit_101111", 12},
-            {"latticesurgery:qubit_110011", 13},
-            {"latticesurgery:qubit_110111", 14},
-            {"latticesurgery:qubit_111011", 15},
-            {"latticesurgery:qubit_111111", 16},
-            {"latticesurgery:distillation_000000", 17},
-            {"latticesurgery:distillation_000100", 18},
-            {"latticesurgery:distillation_001000", 19},
-            {"latticesurgery:distillation_001100", 20},
-            {"latticesurgery:distillation_010000", 21},
-            {"latticesurgery:distillation_010100", 22},
-            {"latticesurgery:distillation_011000", 23},
-            {"latticesurgery:distillation_011100", 24},
-            {"latticesurgery:distillation_100000", 25},
-            {"latticesurgery:distillation_100100", 26},
-            {"latticesurgery:distillation_101000", 27},
-            {"latticesurgery:distillation_101100", 28},
-            {"latticesurgery:distillation_110000", 29},
-            {"latticesurgery:distillation_110100", 30},
-            {"latticesurgery:distillation_111000", 31},
-            {"latticesurgery:distillation_111100", 32},
-            {"latticesurgery:routing_1_000000", 33},
-            {"latticesurgery:routing_1_000100", 34},
-            {"latticesurgery:routing_1_001000", 35},
-            {"latticesurgery:routing_1_001100", 36},
-            {"latticesurgery:routing_1_010000", 37},
-            {"latticesurgery:routing_1_010100", 38},
-            {"latticesurgery:routing_1_011000", 39},
-            {"latticesurgery:routing_1_011100", 40},
-            {"latticesurgery:routing_1_100000", 41},
-            {"latticesurgery:routing_1_100100", 42},
-            {"latticesurgery:routing_1_101000", 43},
-            {"latticesurgery:routing_1_101100", 44},
-            {"latticesurgery:routing_1_110000", 45},
-            {"latticesurgery:routing_1_110100", 46},
-            {"latticesurgery:routing_1_111000", 47},
-            {"latticesurgery:routing_1_111100", 48}
-        };
         int mat_id = 0;
-        auto it = material_map.find(material);
-        if (it != material_map.end())
+        auto it = nameToIdMap.find(material);
+        if (it != nameToIdMap.end())
             mat_id = it->second;
         pattern[{x, y, z}] = mat_id;
         if (x > max_x) max_x = x;
@@ -304,8 +276,8 @@ load_pattern_from_string(const std::string& pattern_str, int stripe_height)
 }
 
 bool generate_minetest_map(const std::string& pattern_str,
-                                                    const std::string& db_path,
-                                                    int stripe_height)
+                           const std::string& db_path,
+                           int stripe_height)
 {
     std::map<PatternKey, int> pattern;
     int global_size_x, global_size_y, global_size_z;
