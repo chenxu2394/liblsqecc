@@ -19,15 +19,15 @@ std::string get_cell_label(const std::optional<DensePatch>& patch)
     // Determine the label based on patch type and activity.
     switch (patch->type) {
         case PatchType::Distillation:
-            return "distillation";
+            return "latticesurgery:distillation";
         case PatchType::PreparedState:
-            return "distillation";
+            return "latticesurgery:distillation";
         case PatchType::Qubit:
-            return "qubit";
+            return "latticesurgery:qubit";
         case PatchType::Routing:
-            return "routing_1";
+            return "latticesurgery:routing_1";
         case PatchType::Dead:
-            return "ancilla";
+            return "latticesurgery:ancilla";
     // Other cases here.
     default:
         return "unknown";
@@ -86,6 +86,11 @@ std::string slice_to_text(const DenseSlice& slice, size_t time_stamp)
             // Append the six-digit code representing edge info.
             std::string edges = get_edges_code(patch);
             // Print the coordinate in the format (row,col,time) followed by " label_edges".
+            if (label.empty())
+            {
+                // If the label is empty, we skip this cell.
+                continue;
+            }
             oss << "(" << row << "," << col << "," << time_stamp << ") " 
                 << label << "_" << edges << "\n";
         }
